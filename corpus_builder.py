@@ -5,55 +5,98 @@ import re
 import sys
 from collections import Counter
 
-aksh_pattern = re.compile(r"""([ऀ-औॠॡ!(),\-.0-9=?'"०-९।॥])| # Vowels
-                             (([क-ह]्)*[क-ह][ा-ौ])|     # compounds
-                             (([क-ह]्)*[क-ह](?![ा-्]))|  # compounds in 'a'
-                             (([क-ह]्)+(?=\s))""", re.X)  # pollu
+if len(sys.argv) < 2:
+    print('Usage:\n{} <path_to_file.txt> [log_output=0]'.format(sys.argv[0]))
+    sys.exit()
 
-aksh2_pattern = re.compile(r"""([अ-औॠॡ][ँ-ः]?)| # Vowels
+try:
+    log_enabled = bool(sys.argv[2])
+except IndexError:
+    log_enabled = False
+
+if log_enabled:
+    def log(*args, **kwargs):
+        print(*args, **kwargs)
+else:
+    def log(*args, **kwargs):
+        pass
+
+akshara_pattern = re.compile(r"""([अ-औॠॡ][ँ-ः]?)| # Vowels
                              (([क-ह]्)*[क-ह][ा-ौ][ँ-ः]?)|     # compounds
                              (([क-ह]्)*[क-ह][ँ-ः])|  # compounds in 'a'
                              (([क-ह]्)*[क-ह](?![ा-्]))|  # compounds in 'a'
                              (([क-ह]्)+$)""", re.X)  # pollu
 counts = Counter()
 txtfile = open(sys.argv[1])
+
+#
+# First parse the input file to find unique aksharas
+#
 for line in txtfile:
-    print(line)
+    log(line)
     for word in line.split():
-        print(word, end='  :  ')
-        aks 2aksh_match in aksh_pattern.finditer(word):
+        log(word, end='  :  ')
+        for aksh_match in akshara_pattern.finditer(word):
             counts[aksh_match.group()] += 1
-            print('{{{}}}'.format(aksh_match.group()), end='')
+            log('{{{}}}'.format(aksh_match.group()), end='')
         counts['_'] += 1
-        print('{_}')
+        log('{_}')
     counts['$'] += 1
-    print('{$}')
+    log('{$}')
 
+#
+# Encode the above aksharas as integers
+#
 hashcodes = {}
-i, corpus_sz = 0, 0
-for k, v in sorted(counts.items(), key=lambda x:x[0]):
-    hashcodes[k] = i
-    print(i, k, v)
-    i += 1
-    corpus_sz += v
+i_code = 0
+for akshara, count in sorted(counts.items(), key=lambda x:x[0]):
+    hashcodes[akshara] = i_code
+    log(i_code, akshara, count)
+    i_code += 1
 
+#
+# Now build the actual corpus as a sequence of integers
+#
 txtfile.seek(0)
-corpus = []
+corpus = [hashcodes['$']]
 for line in txtfile:
     for word in line.split():
-        aks 2aksh_match in aksh_pattern.finditer(line):
+        # Add each akshara from each word
+        for aksh_match in akshara_pattern.finditer(word):
             corpus.append(hashcodes[aksh_match.group()])
-        corpus.append(hashcodes['_'])
-    corpus.append(hashcodes['$'])
+            log('{{{}}}'.format(aksh_match.group()), end='')
+
+        # Add a space if the previous character is not a space or newline
+        if not corpus[-1] in (hashcodes['$'], hashcodes['_']):
+            corpus.append(hashcodes['_'])
+            log('{_}')
+
+    # Add newline if previous character was not newline
+    # If previous character is a space replace it with newline
+    if corpus[-1] != hashcodes['$']:
+        if corpus[-1] == hashcodes['_']:
+            corpus[-1] = hashcodes['$']
+            log('{<$}')
+        else:
+            corpus.append(hashcodes['$'])
+            log('{$}')
 
 txtfile.close()
+log(hashcodes)
+log(corpus)
 
-#print(hashcodes)
-
-print(corpus)
-
+#
+# Now save the corpus and the hashcodes
+#
 import pickle, os
 outfile = os.path.basename(sys.argv[1])[:-4] + '.pkl'
 with open(outfile, 'wb') as f:
     pickle.dump(corpus, f, 2)
 
+hashfile = os.path.basename(sys.argv[1])[:-4] + '.list'
+with open(hashfile, 'w') as f:
+    f.write('# The aksharas, their codes and counts stored as a list\n')
+    f.write('codes = [\n')
+    for akshara, code in sorted(hashcodes.items(), key=lambda x:x[1]):
+        f.write('{}, # {}, {}\n'.format(akshara, code, counts[akshara]))
+    f.write(']')
