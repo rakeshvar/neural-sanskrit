@@ -1,27 +1,32 @@
 #!/usr/bin/python
 from __future__ import print_function
 import sys
+import pickle
+from operator import mul
+
 import numpy as np
 import theano
 import theano.tensor as T
 from theano import config, shared
-import pickle
-from   theano.tensor.nnet   import conv
+from theano.tensor.nnet   import conv
 
 #############################     Parameters    ##############################
 
-nDims = 10
+nDims = 9
 nPredictors = 3
-nHidden = 50
-nEpochs = 20
+nHidden = 100
+nEpochs = 300
 batch_sz = 20
-rate = .01 * batch_sz
-lex_update_speed = 2
-wt_decay = .0
-lex_decay_speed = 10
+init_learn_rate = .01 * batch_sz
+lex_relative_rate = 20
+kernel_relative_rate = 10
+wt_decay = 1
+lex_wt_decay = 1
+penalize_l = 2
+kernel = 'gauss'
 
-rootndims = float(nDims) ** .5
-sqrndims = nDims ** 2
+init_kernel_sz = nDims
+# Use nDims for gauss
 
 #############################  Open file & Info  #############################
 
@@ -34,24 +39,27 @@ nWords = corpus.max() + 1
 
 lexicon = np.random.normal(size=(nWords, nDims))
 for word in lexicon:
-    word /= np.linalg.norm(word) / rootndims
+    word /= np.linalg.norm(word)
 
 print('\nUnique Aksharas: {}'
       '\nCorpus Size: {}'
       '\nPredictors: {}'
       '\nHidden: {}'
       '\nDimensions: {}'
-      '\nWeight Decay: {} (lex: *{})'
+      '\nWeight Decay: {} (lex: {})'
       '\nEpochs: {}'
       '\nBatch Size: {}'
       '\nLearning Rate: {} (lex: *{})'.format(
         nWords, nCorpus, nPredictors, nHidden, nDims, 
-        wt_decay, lex_decay_speed, nEpochs, batch_sz, rate, lex_update_speed))
+        wt_decay, lex_wt_decay, nEpochs, batch_sz, init_learn_rate, lex_relative_rate))
 
 ##############################  Helper Functions ##############################
 
 def share(data, dtype=config.floatX):
     return shared(np.asarray(data, dtype), borrow=True)
+
+def borrow(sharedvar, borrow=True):
+    return sharedvar.get_value(borrow=borrow)
 
 def print_lex_info(lex):
     for word in lex:
@@ -67,6 +75,15 @@ def get_wts(sizeW, sizeB, wname='W', bname='b'):
         np.random.uniform(low=-1, high=1, size=sizeB), dtype=config.floatX)
     b = shared(b_values, name=bname, borrow=True)
     return w, b
+
+def get_size(shared_var):
+    return reduce(mul, shared_var.get_value().shape)
+
+def penalty(param):
+    if penalize_l == 2:
+        return (param**2).sum()
+    elif penalize_l == 1:
+        return abs(param).sum()
 
 ##############################  The Neural Net ################################
 
@@ -103,29 +120,58 @@ got_out_vecs = got_out_vecs.dimshuffle(0, 'x', 1)      # batch_sz x 1 x nDims
 lex1 = lexicon.dimshuffle('x', 0,  1)                  # 1 x nWords x nDims
 lex2 = lexicon.dimshuffle(0, 'x', 1)                   # nWords x 1 x nDims
 
-dists   = T.sum((got_out_vecs - lex1)**2, axis=2)       
-                  # batch_sz x nWords x nDims (--sum-->>) batch_sz x nWords
-probs   = T.nnet.softmax(dists/nDims)                   # batch_sz x nWords
+# batch_sz x nWords x nDims (--sum-->>) batch_sz x nWords = dists.shape
+if kernel in ('gauss', 'cauchy',):
+    dists = T.sum((got_out_vecs - lex1)**2, axis=2)
+elif kernel == 'laplace':
+    dists = T.sum(abs(got_out_vecs - lex1), axis=2)
 
+kernel_sz = theano.shared(np.cast[theano.config.floatX](init_kernel_sz))
+dists /= kernel_sz
+
+    # probs.shape =  batch_sz x nWords
+if kernel in ('gauss', 'laplace'):
+    probs = T.nnet.softmax(-dists)
+elif kernel == 'cauchy':
+    raw_probs = 1/(1 + dists)
+    probs = raw_probs / T.sum(raw_probs, axis=1).dimshuffle(0, 'x')
 
 ######################### Cost, Gradient, Updates & the Like
+cur_learn_rate = theano.shared(np.cast[theano.config.floatX](0.0))
 
 right_probs = probs[T.arange(batch_sz), output_indexen] # batch_sz
 logprob = T.log(right_probs)                            # batch_sz
 
 prediction_cost = -T.mean(logprob)
-weight_cost = T.sum([(param ** 2).mean() 
-                        for param in (W1, b1, W2, b2, lexicon)])
-cost = prediction_cost + wt_decay * weight_cost
+
+params = (W1,W2,) #b1, b2,)
+n_wts = sum([get_size(p) for p in params])
+wt_cost = T.sum([penalty(p) for p in params]) / n_wts
+
+lex_wt_cost = penalty(lexicon) / get_size(lexicon)
+cost = prediction_cost \
+        + wt_decay * wt_cost \
+        + lex_wt_decay * lex_wt_cost #- T.log(kernel_sz) * 1e-3
 
 updates = []
 
-for param in (W1, b1, W2, b2):
-    update = param - rate * T.grad(cost, param)
-    updates.append((param, update))
+def relative_rate(prm):
+    if prm is lexicon:
+        return lex_relative_rate
+    if prm is kernel_sz:
+        return kernel_relative_rate
+    return 1
 
-lex_update = lexicon - lex_update_speed * rate * T.grad(cost, lexicon)
-updates.append((lexicon, lex_update))
+for prm in (W1, b1, W2, b2, lexicon, kernel_sz):
+    if prm is kernel_sz:
+        prm_updt = theano.shared(np.cast[theano.config.floatX](0.0))
+    else:
+        prm_updt = theano.shared(borrow(prm)*0., broadcastable=prm.broadcastable)
+
+    updates.append((prm_updt, .99*prm_updt + .01*T.grad(cost, prm)))
+
+    updated_prm = prm - cur_learn_rate * prm_updt * relative_rate(prm)
+    updates.append((prm, updated_prm))
 
 volume = T.mean((lex1 - lex2) ** 2)
 
@@ -134,14 +180,17 @@ volume = T.mean((lex1 - lex2) ** 2)
 print('\nCompiling ...')
 trainer = theano.function([start_idx], cost, updates=updates)
 tester = theano.function([start_idx], right_probs.mean())
-volumer = theano.function([], [volume, weight_cost])
+volumer = theano.function([], [volume, wt_cost, lex_wt_cost])
 
 
 ############################# Actual Training #############################
-print('\n\nepoch,   cost,tr_prob,ts_prob, volume, weight_cost ')
+print('Initial volume {:6.4f}, wt_cost {:6.4f}, lexcost {:6.4f} kernel_sz'
+      ''.format(*map(float, volumer())), borrow(kernel_sz))
+print('\n\nepoch,   cost,tr_prob,ts_prob, volume, wtcost,lexcost,kern_sz')
 
 TRAIN = int(nCorpus * .75)
 for epoch in range(nEpochs):
+    cur_learn_rate.set_value(init_learn_rate /(1 + epoch//5))
     tr_prob, ts_prob, cost = 0.0, 0.0, 0.0
     for i in range(0, TRAIN - nPredictors - batch_sz, batch_sz):
         print('TR{:6d}'.format(i), end='')
@@ -161,35 +210,7 @@ for epoch in range(nEpochs):
     tr_prob /= (TRAIN - nPredictors - batch_sz)//batch_sz
     ts_prob /= (nCorpus - nPredictors - batch_sz - TRAIN)//batch_sz
     cost /= (TRAIN - nPredictors - batch_sz)//batch_sz
-    ar, wt_c = volumer()
-    print('{:5}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}'.format(
-                    epoch, cost, tr_prob, ts_prob, float(ar), float(wt_c)))
-
-
-############################### Do Some PCA ################################
-
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
-
-pca = PCA(n_components=4)
-pcs = pca.fit_transform(lexicon.get_value())
-
-def plot_scatter_label(x, y):
-    plt.scatter(x, y)
-
-    for label, i, j in zip(range(nWords), x, y):
-        plt.annotate(
-            str(label),
-            xy=(i, j),
-            #xytext = (-20, 20),
-            #textcoords = 'offset points', ha = 'right', va = 'bottom',
-            #bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
-            #arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0')
-        )
-
-plot_scatter_label(pcs[:, 0], pcs[:, 1])
-plt.show()
-plot_scatter_label(pcs[:, 1], pcs[:, 2])
-plt.show()
-plot_scatter_label(pcs[:, 2], pcs[:, 3])
-plt.show()
+    vol, wt_c, lex_wt_c = map(float, volumer())
+    print('{:5}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, '
+          '{:6.4f}'.format(epoch, cost, tr_prob, ts_prob, vol, wt_c, lex_wt_c,
+                           float(borrow(kernel_sz))))
