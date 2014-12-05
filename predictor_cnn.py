@@ -1,6 +1,8 @@
 #!/usr/bin/python
 from __future__ import print_function
 import sys
+import ast
+import os
 import pickle
 from operator import mul
 
@@ -8,58 +10,85 @@ import numpy as np
 import theano
 import theano.tensor as T
 from theano import config, shared
-from theano.tensor.nnet   import conv
+from theano.tensor.nnet import conv
+
+if len(sys.argv) < 2:
+    print('Usage: {} <corpus.pkl> [params.prm] [report_satus]'
+          '\n\t params.prm can be "default"'
+          '\n\t report_status reports the progress of testing and training '
+          '\n\t\t within an epoch. False by default'.format(sys.argv[0]))
+    sys.exit()
 
 #############################     Parameters    ##############################
 
-nDims = 9
-nPredictors = 3
-nHidden = 100
-nEpochs = 300
-batch_sz = 20
-init_learn_rate = .01 * batch_sz
-lex_relative_rate = 20
-kernel_relative_rate = 10
-wt_decay = 1
-lex_wt_decay = 1
-penalize_l = 2
-kernel = 'gauss'
+class Bunch(object):
+    def __init__(self, adict):
+        self.__dict__.update(adict)
 
-init_kernel_sz = nDims
-# Use nDims for gauss
+parameters = {
+    'nDims': 12,
+    'nPredictors': 3,
+    'nHidden': 72,
+    'nEpochs': 300,
+    'batch_sz': 20,
+    'lex_relative_rate': 2,
+    'kernel_relative_rate': 2,
+    'wt_decay': 1,
+    'lex_wt_decay': 1,
+    'penalize_l': 2,
+    'kernel': 'laplace',
+    'train_fraction': .75,
+}
+parameters['init_learn_rate'] = .01 * parameters['batch_sz']
+parameters['init_kernel_sz'] = parameters['nDims'] ** (
+    .5 * (parameters['kernel'] is 'laplace'))
+
+prm_file_name = 'default.prm'
+if (len(sys.argv) > 2) and (sys.argv[2].endswith('.prm')):
+    prm_file_name = sys.argv[2]
+    with open(prm_file_name, 'rb') as param_file:
+        parameters.update(ast.literal_eval(param_file.read()))
+
+P = Bunch(parameters)
+
+report_progress = (len(sys.argv) > 3)
 
 #############################  Open file & Info  #############################
 
-with open(sys.argv[1], 'rb') as f:
+inpt_file_name = sys.argv[1]
+with open(inpt_file_name, 'rb') as f:
     corpus = pickle.load(f)
 corpus = np.array(corpus, dtype='int32')
 
 nCorpus = len(corpus)
 nWords = corpus.max() + 1
 
-lexicon = np.random.normal(size=(nWords, nDims))
+lexicon = np.random.normal(size=(nWords, P.nDims))
 for word in lexicon:
     word /= np.linalg.norm(word)
 
-print('\nUnique Aksharas: {}'
-      '\nCorpus Size: {}'
-      '\nPredictors: {}'
-      '\nHidden: {}'
-      '\nDimensions: {}'
-      '\nWeight Decay: {} (lex: {})'
-      '\nEpochs: {}'
-      '\nBatch Size: {}'
-      '\nLearning Rate: {} (lex: *{})'.format(
-        nWords, nCorpus, nPredictors, nHidden, nDims, 
-        wt_decay, lex_wt_decay, nEpochs, batch_sz, init_learn_rate, lex_relative_rate))
+print('\nUnique Aksharas: {}\nCorpus Size: {}'.format(nWords, nCorpus))
+for k, v in sorted(parameters.items(), key=lambda x: x[0]):
+    print('{}: {}'.format(k, v))
 
-##############################  Helper Functions ##############################
+# #############################  Helper Functions ##############################
+
+
+def relative_rate(prm):
+    if prm is lexicon:
+        return P.lex_relative_rate
+    if prm is kernel_sz:
+        return P.kernel_relative_rate
+    return 1
+
 
 def share(data, dtype=config.floatX):
     return shared(np.asarray(data, dtype), borrow=True)
 
-def borrow(sharedvar, borrow=True):
-    return sharedvar.get_value(borrow=borrow)
+
+def borrow(sharedvar, boro=True):
+    return sharedvar.get_value(borrow=boro)
+
 
 def print_lex_info(lex):
     for word in lex:
@@ -67,150 +96,170 @@ def print_lex_info(lex):
         print('({:7.4} {:7.4} {:7.4} {:7.4}), '.format(
             word.max(), word.min(), np.linalg.norm(word), neighbour), end='\n')
 
-def get_wts(sizeW, sizeB, wname='W', bname='b'):
+
+def get_wts(size_w, size_b, wname='W', bname='b'):
     w_values = np.asarray(
-        np.random.uniform(low=-1, high=1, size=sizeW), dtype=config.floatX)
+        np.random.uniform(low=-1, high=1, size=size_w), dtype=config.floatX)
     w = shared(w_values, name=wname, borrow=True)
     b_values = np.asarray(
-        np.random.uniform(low=-1, high=1, size=sizeB), dtype=config.floatX)
+        np.random.uniform(low=-1, high=1, size=size_b), dtype=config.floatX)
     b = shared(b_values, name=bname, borrow=True)
     return w, b
+
 
 def get_size(shared_var):
     return reduce(mul, shared_var.get_value().shape)
 
+
 def penalty(param):
-    if penalize_l == 2:
-        return (param**2).sum()
-    elif penalize_l == 1:
+    if P.penalize_l == 2:
+        return (param ** 2).sum()
+    elif P.penalize_l == 1:
         return abs(param).sum()
 
 ##############################  The Neural Net ################################
-
 lexicon = share(lexicon)
 corpus = share(corpus, 'int32')
 
 ######################## Input Layer
-
 start_idx = T.iscalar()
-xdim = nPredictors + batch_sz - 1
-input_indexen = corpus[start_idx:start_idx+xdim]          # xdim
-output_indexen = corpus[start_idx+nPredictors:start_idx+batch_sz+nPredictors] 
-                                                                # batch_sz
-predictors = lexicon[input_indexen].dimshuffle('x','x', 0, 1) # 1x1x dim x nDims
-
+xdim = P.nPredictors + P.batch_sz - 1
+input_indexen = corpus[start_idx:start_idx + xdim]  # xdim
+output_indexen = corpus[start_idx + P.nPredictors:
+                        start_idx + P.batch_sz + P.nPredictors]     # batch_sz
+predictors = lexicon[input_indexen].dimshuffle('x', 'x', 0, 1)
+                                                            # 1x1x dim x nDims
 
 ######################### Hidden Layer
-
-sizeW1 = (nHidden, 1, nPredictors, nDims)
-image_shape  = (1, 1, xdim, nDims)
-W1, b1 = get_wts(sizeW1, nHidden, 'W1', 'b1')
-hidden_conv = conv.conv2d(predictors, W1, image_shape, sizeW1)  
+sizeW1 = (P.nHidden, 1, P.nPredictors, P.nDims)
+image_shape = (1, 1, xdim, P.nDims)
+W1, b1 = get_wts(sizeW1, P.nHidden, 'W1', 'b1')
+hidden_conv = conv.conv2d(predictors, W1, image_shape, sizeW1)
                                                     # 1 x nHidden x batch_sz x 1
 hidden_conv = hidden_conv.dimshuffle(2, 1)          # batch_sz x nHidden
 hidden = T.tanh(hidden_conv + b1)
 
+### Dropout
+srs = T.shared_randomstreams.RandomStreams()
+mask = srs.binomial(n=1, p=.5, size=(P.batch_sz, P.nHidden))
+dropped_hidden = hidden * T.cast(mask, theano.config.floatX)
+
 
 ######################### Output Layer
+W2, b2 = get_wts((P.nHidden, P.nDims,), P.nDims, 'W2', 'b2')
+got_out_vecs_tr = T.dot(dropped_hidden, W2) + b2  # batch_sz x nDims
+got_out_vecs_te = T.dot(hidden / 2, W2) + b2
 
-W2, b2 = get_wts((nHidden, nDims,), nDims, 'W2', 'b2')
-got_out_vecs  = T.dot(hidden, W2) + b2                 # batch_sz x nDims
-got_out_vecs = got_out_vecs.dimshuffle(0, 'x', 1)      # batch_sz x 1 x nDims
+got_out_vecs_tr = got_out_vecs_tr.dimshuffle(0, 'x', 1)  # batch_sz x 1 x nDims
+got_out_vecs_te = got_out_vecs_te.dimshuffle(0, 'x', 1)
 
-lex1 = lexicon.dimshuffle('x', 0,  1)                  # 1 x nWords x nDims
-lex2 = lexicon.dimshuffle(0, 'x', 1)                   # nWords x 1 x nDims
+lex1 = lexicon.dimshuffle('x', 0, 1)  # 1 x nWords x nDims
+lex2 = lexicon.dimshuffle(0, 'x', 1)  # nWords x 1 x nDims
 
 # batch_sz x nWords x nDims (--sum-->>) batch_sz x nWords = dists.shape
-if kernel in ('gauss', 'cauchy',):
-    dists = T.sum((got_out_vecs - lex1)**2, axis=2)
-elif kernel == 'laplace':
-    dists = T.sum(abs(got_out_vecs - lex1), axis=2)
+if P.kernel in ('gauss', 'cauchy',):
+    dists = T.sum((got_out_vecs_tr - lex1) ** 2, axis=2)
+    dists_te = T.sum((got_out_vecs_te - lex1) ** 2, axis=2)
+elif P.kernel == 'laplace':
+    dists = T.sum(abs(got_out_vecs_tr - lex1), axis=2)
+    dists_te = T.sum(abs(got_out_vecs_te - lex1), axis=2)
 
-kernel_sz = theano.shared(np.cast[theano.config.floatX](init_kernel_sz))
+kernel_sz = shared(np.cast[theano.config.floatX](P.init_kernel_sz))
 dists /= kernel_sz
-
-    # probs.shape =  batch_sz x nWords
-if kernel in ('gauss', 'laplace'):
-    probs = T.nnet.softmax(-dists)
-elif kernel == 'cauchy':
-    raw_probs = 1/(1 + dists)
+dists_te /= kernel_sz
+if P.kernel in ('gauss', 'laplace'):
+    probs = T.nnet.softmax(-dists)                  #  batch_sz x nWords
+    probs_te = T.nnet.softmax(-dists_te)
+elif P.kernel == 'cauchy':
+    raw_probs = 1 / (1 + dists)
     probs = raw_probs / T.sum(raw_probs, axis=1).dimshuffle(0, 'x')
+    raw_probs_te = 1 / (1 + dists_te)
+    probs_te = raw_probs_te / T.sum(raw_probs_te, axis=1).dimshuffle(0, 'x')
 
 ######################### Cost, Gradient, Updates & the Like
-cur_learn_rate = theano.shared(np.cast[theano.config.floatX](0.0))
+cur_learn_rate = shared(np.cast[theano.config.floatX](0.0))
 
-right_probs = probs[T.arange(batch_sz), output_indexen] # batch_sz
-logprob = T.log(right_probs)                            # batch_sz
+right_probs = probs[T.arange(P.batch_sz), output_indexen]  # batch_sz
+right_probs_te = probs[T.arange(P.batch_sz), output_indexen]  # batch_sz
+logprob = T.log(right_probs)  # batch_sz
 
 prediction_cost = -T.mean(logprob)
 
-params = (W1,W2,) #b1, b2,)
-n_wts = sum([get_size(p) for p in params])
-wt_cost = T.sum([penalty(p) for p in params]) / n_wts
+wt_decayed_params = (W1, W2,)   # b1, b1
+n_wts = sum([get_size(p) for p in wt_decayed_params])
+wt_cost = T.sum([penalty(p) for p in wt_decayed_params]) / n_wts
 
 lex_wt_cost = penalty(lexicon) / get_size(lexicon)
 cost = prediction_cost \
-        + wt_decay * wt_cost \
-        + lex_wt_decay * lex_wt_cost #- T.log(kernel_sz) * 1e-3
+       + P.wt_decay * wt_cost \
+       + P.lex_wt_decay * lex_wt_cost
 
 updates = []
-
-def relative_rate(prm):
-    if prm is lexicon:
-        return lex_relative_rate
-    if prm is kernel_sz:
-        return kernel_relative_rate
-    return 1
-
 for prm in (W1, b1, W2, b2, lexicon, kernel_sz):
     if prm is kernel_sz:
-        prm_updt = theano.shared(np.cast[theano.config.floatX](0.0))
+        prm_updt = shared(np.cast[theano.config.floatX](0.0))
     else:
-        prm_updt = theano.shared(borrow(prm)*0., broadcastable=prm.broadcastable)
+        prm_updt = shared(borrow(prm) * 0., broadcastable=prm.broadcastable)
 
-    updates.append((prm_updt, .99*prm_updt + .01*T.grad(cost, prm)))
+    updates.append((prm_updt, .99 * prm_updt + .01 * T.grad(cost, prm)))
 
     updated_prm = prm - cur_learn_rate * prm_updt * relative_rate(prm)
     updates.append((prm, updated_prm))
-
-volume = T.mean((lex1 - lex2) ** 2)
 
 
 ######################### Compile Functions
 print('\nCompiling ...')
 trainer = theano.function([start_idx], cost, updates=updates)
-tester = theano.function([start_idx], right_probs.mean())
-volumer = theano.function([], [volume, wt_cost, lex_wt_cost])
+tester = theano.function([start_idx], right_probs_te.mean())
+wt_costs_ = theano.function([], [wt_cost, lex_wt_cost])
 
+def wt_costs():
+    return map(float, wt_costs_())
 
 ############################# Actual Training #############################
-print('Initial volume {:6.4f}, wt_cost {:6.4f}, lexcost {:6.4f} kernel_sz'
-      ''.format(*map(float, volumer())), borrow(kernel_sz))
-print('\n\nepoch,   cost,tr_prob,ts_prob, volume, wtcost,lexcost,kern_sz')
+print('Initial wt_cost {:6.4f}, lexcost {:6.4f} kernel_sz '
+      ''.format(*wt_costs()), round(borrow(kernel_sz), 4))
+print('\n\nepoch,   cost,tr_prob,ts_prob, wtcost,lexcost,kern_sz')
 
-TRAIN = int(nCorpus * .75)
-for epoch in range(nEpochs):
-    cur_learn_rate.set_value(init_learn_rate /(1 + epoch//5))
+TRAIN = int(nCorpus * P.train_fraction)
+best_te_prob = 0
+best_pkl_file = None
+pkl_file_name = os.path.splitext(inpt_file_name)[0] + '_{:04.1f}_' +\
+                os.path.splitext(os.path.basename(prm_file_name))[0] + '.pkl'
+
+for epoch in range(P.nEpochs):
+    cur_learn_rate.set_value(P.init_learn_rate / (1 + epoch // 5))
     tr_prob, ts_prob, cost = 0.0, 0.0, 0.0
-    for i in range(0, TRAIN - nPredictors - batch_sz, batch_sz):
-        print('TR{:6d}'.format(i), end='')
+    for i in range(0, TRAIN - P.nPredictors - P.batch_sz, P.batch_sz):
+        if report_progress : print('TR{:6d}'.format(i), end='')
         cost += trainer(i)
-        print('\b\b\b\b\b\b\b\b', end='')
+        if report_progress : print('\b\b\b\b\b\b\b\b', end='')
 
-    for i in range(0, TRAIN - nPredictors - batch_sz, batch_sz):
-        print('TS{:6d}'.format(i), end='')
+    for i in range(0, TRAIN - P.nPredictors - P.batch_sz, P.batch_sz):
+        if report_progress : print('TS{:6d}'.format(i), end='')
         tr_prob += tester(i)
-        print('\b\b\b\b\b\b\b\b', end='')
+        if report_progress : print('\b\b\b\b\b\b\b\b', end='')
 
-    for i in range(TRAIN, nCorpus - nPredictors - batch_sz, batch_sz):
-        print('TS{:6d}'.format(i), end='')
+    for i in range(TRAIN, nCorpus - P.nPredictors - P.batch_sz, P.batch_sz):
+        if report_progress : print('TS{:6d}'.format(i), end='')
         ts_prob += tester(i)
-        print('\b\b\b\b\b\b\b\b', end='')
+        if report_progress : print('\b\b\b\b\b\b\b\b', end='')
 
-    tr_prob /= (TRAIN - nPredictors - batch_sz)//batch_sz
-    ts_prob /= (nCorpus - nPredictors - batch_sz - TRAIN)//batch_sz
-    cost /= (TRAIN - nPredictors - batch_sz)//batch_sz
-    vol, wt_c, lex_wt_c = map(float, volumer())
-    print('{:5}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, '
-          '{:6.4f}'.format(epoch, cost, tr_prob, ts_prob, vol, wt_c, lex_wt_c,
-                           float(borrow(kernel_sz))))
+    tr_prob /= (TRAIN - P.nPredictors - P.batch_sz) // P.batch_sz
+    ts_prob /= (nCorpus - P.nPredictors - P.batch_sz - TRAIN) // P.batch_sz
+    cost /= (TRAIN - P.nPredictors - P.batch_sz) // P.batch_sz
+    wt_c, lex_wt_c = wt_costs()
+
+    if ts_prob > best_te_prob:
+        if best_pkl_file:
+            os.remove(best_pkl_file)
+        best_te_prob = ts_prob
+        best_pkl_file = pkl_file_name.format(100 * best_te_prob)
+        wts_lex = {'W1':borrow(W1), 'W2': borrow(W2), 'b1':borrow(b1),
+                   'b2': borrow(b2), 'lexicon': borrow(lexicon)}
+        with open(best_pkl_file, "wb") as f:
+            pickle.dump(wts_lex, f, -1)
+
+    print('{:5}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {}'
+          ''.format(epoch, cost, tr_prob, ts_prob, wt_c, lex_wt_c,
+                    float(borrow(kernel_sz)), best_pkl_file))
