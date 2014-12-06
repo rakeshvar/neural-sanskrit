@@ -1,3 +1,4 @@
+#!/usr/bin/python
 from __future__ import print_function
 import importlib, ast
 import sys
@@ -55,7 +56,7 @@ def printd(dd, uu):
             print('\t{} {}'.format(aksharas[kk], vv))
 
 
-printd(ngrams, tup_cnt)
+#printd(ngrams, tup_cnt)
 
 
 def get_prob(tup, follower, laplace):

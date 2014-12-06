@@ -40,8 +40,10 @@ parameters = {
     'train_fraction': .75,
 }
 parameters['init_learn_rate'] = .01 * parameters['batch_sz']
-parameters['init_kernel_sz'] = parameters['nDims'] ** (
-    .5 * (parameters['kernel'] is 'laplace'))
+if parameters['kernel'] is 'laplace':
+	parameters['init_kernel_sz'] = parameters['nDims'] ** .5
+else:
+	parameters['init_kernel_sz'] = parameters['nDims']
 
 prm_file_name = 'default.prm'
 if (len(sys.argv) > 2) and (sys.argv[2].endswith('.prm')):
@@ -219,22 +221,29 @@ def wt_costs():
 ############################# Actual Training #############################
 print('Initial wt_cost {:6.4f}, lexcost {:6.4f} kernel_sz '
       ''.format(*wt_costs()), round(borrow(kernel_sz), 4))
-print('\n\nepoch,   cost,tr_prob,ts_prob, wtcost,lexcost,kern_sz')
+stats = ['epoch,   cost,tr_prob,ts_prob, wtcost,lexcost,kern_sz']
+print('\n\n', stats[0])
 
 TRAIN = int(nCorpus * P.train_fraction)
-best_te_prob = 0
+best_ts_prob = 0
 best_pkl_file = None
 pkl_file_name = os.path.splitext(inpt_file_name)[0] + '_{:04.1f}_' +\
                 os.path.splitext(os.path.basename(prm_file_name))[0] + '.pkl'
 
 for epoch in range(P.nEpochs):
+	# Set current learning rate
     cur_learn_rate.set_value(P.init_learn_rate / (1 + epoch // 5))
+    
+    # Train the data
+    #
     tr_prob, ts_prob, cost = 0.0, 0.0, 0.0
     for i in range(0, TRAIN - P.nPredictors - P.batch_sz, P.batch_sz):
         if report_progress : print('TR{:6d}'.format(i), end='')
         cost += trainer(i)
         if report_progress : print('\b\b\b\b\b\b\b\b', end='')
 
+    # Find test & train probabilities
+    #
     for i in range(0, TRAIN - P.nPredictors - P.batch_sz, P.batch_sz):
         if report_progress : print('TS{:6d}'.format(i), end='')
         tr_prob += tester(i)
@@ -250,13 +259,28 @@ for epoch in range(P.nEpochs):
     cost /= (TRAIN - P.nPredictors - P.batch_sz) // P.batch_sz
     wt_c, lex_wt_c = wt_costs()
 
-    if ts_prob > best_te_prob:
+    # Print some stats
+    #
+    if ts_prob > best_ts_prob:
+        tmp_best_pkl_file = pkl_file_name.format(100 * ts_prob)
+
+    stat = ('{:5}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {:6.4f}, {}' 
+            ''.format(epoch, cost, tr_prob, ts_prob, wt_c, lex_wt_c,
+                     float(borrow(kernel_sz)), tmp_best_pkl_file))
+    print(stat)
+    stats.append(stat)
+
+    # If performance is better, save pkl file
+    #
+    if ts_prob > best_ts_prob:
         if best_pkl_file:
             os.remove(best_pkl_file)
-        best_te_prob = ts_prob
-        best_pkl_file = pkl_file_name.format(100 * best_te_prob)
-        wts_lex = {'W1':borrow(W1), 'W2': borrow(W2), 'b1':borrow(b1),
-                   'b2': borrow(b2), 'lexicon': borrow(lexicon)}
+        best_ts_prob = ts_prob
+        best_pkl_file = pkl_file_name.format(100 * best_ts_prob)
+        wts_lex = {'W1':borrow(W1), 'W2': borrow(W2), 
+        		   'b1':borrow(b1), 'b2': borrow(b2), 
+        		   'lexicon': borrow(lexicon), 
+        		   'params': P.__dict__, 'stats' : stats}
         with open(best_pkl_file, "wb") as f:
             pickle.dump(wts_lex, f, -1)
 
