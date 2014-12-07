@@ -10,29 +10,31 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
-
+from sklearn.cluster import KMeans
+from sklearn.cluster import AgglomerativeClustering
 
 if(len(sys.argv)<6):
-	print('Usage: python visual_output.py <DIMENSIONS> <pca pickle> <tsne pickle> <akshara pickle file> <.list file>')
+	print('Usage: python visual_output.py <DIMENSIONS> <COUNT_THRESHOLD> <pca pickle> <tsne pickle> <akshara pickle file> <.list file>')
 
 DIMENSIONS = int(sys.argv[1])
+COUNT_THRESHOLD = int(sys.argv[2])
 
 ####################### READ IN DIM REDUCTION DATA FROM FILE #########################
 
 # Read in PCA information
-with open(sys.argv[2],'rb') as f: 
+with open(sys.argv[3],'rb') as f: 
     pcs_pca = pickle.load(f)
 
 # Read in tSNE information
-with open(sys.argv[3],'rb') as f: 
+with open(sys.argv[4],'rb') as f: 
     pcs_tsne = pickle.load(f)
 
 # Read in the aksharas
-with open(sys.argv[4],'rb') as f: 
+with open(sys.argv[5],'rb') as f: 
     aksharas = pickle.load(f)
 
 # Read in akshara frequencies
-with open(sys.argv[5],'rb') as f: 
+with open(sys.argv[6],'rb') as f: 
     aksharas_freq = ast.literal_eval(f.read())
 
 nWords=len(aksharas)
@@ -84,6 +86,16 @@ else:
     x.append(pcs_tsne[:,0])
     y.append(pcs_tsne[:,1])
 
+    # # Calculate KMeans Clustering
+    # estimator = KMeans(n_clusters=15)
+    # estimator.fit(pcs_tsne)
+    # labels = estimator.labels_
+
+    # Calculate Agglomerative Clustering
+    estimator = AgglomerativeClustering(n_clusters=15)
+    estimator.fit(pcs_tsne)
+    labels = estimator.labels_
+
     for ind in [0,1]:
 	    plt.scatter(x[ind], y[ind], c=[1, 1, 1], s=0)#c=labels.astype(np.float), s=1000)
 	    cols = [
@@ -104,23 +116,34 @@ else:
 	    (.1, .5, .5),   
 	    ]
 	    for label, i, j in zip(range(nWords), x[ind], y[ind]):
-	        if aksharas_freq[label][1]//500 < 10:
-	            pass #continue
-	        unicode_endings = [u'ा', u'ि', u'ी', u'ु', u'ू', u'ृ', u'े', u'ै', u'ो', u'ौ', u'ं', u'ः', u'्']
-	        if (aksharas[label][-1]) in unicode_endings:
-	        	color_ind = unicode_endings.index(aksharas[label][-1])
-	        elif aksharas[label] in u'अआइईउऊऋएऐओऔ':
-	        	color_ind = 13
-	        else: 
-	        	color_ind = 14
-	        plt.annotate(
-	            aksharas[label], size = min(25, 2 + 1.5 * aksharas_freq[label][1]/1),
-	            # xy=(i, j), color = cols[-1+len(aksharas[label])],
-	            xy=(i, j), color = cols[color_ind],
-	            xytext = (0, 0),
-	            textcoords = 'offset points', # ha = 'right', va = 'bottom',
-	            #bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
-	            #arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0')
-	        )
-	    plt.legend(loc='upper left')
+	        if aksharas_freq[label][1]<COUNT_THRESHOLD:
+	            continue
+	        if ind==0: # PCA
+		        unicode_endings = [u'ा', u'ि', u'ी', u'ु', u'ू', u'ृ', u'े', u'ै', u'ो', u'ौ', u'ं', u'ः', u'्']
+		        if (aksharas[label][-1]) in unicode_endings:
+		        	color_ind = unicode_endings.index(aksharas[label][-1])
+		        elif aksharas[label] in u'अआइईउऊऋएऐओऔ':
+		        	color_ind = 13
+		        else: 
+		        	color_ind = 14
+		        plt.annotate(
+		            aksharas[label], size = min(25, 2 + 1.5 * aksharas_freq[label][1]/500),
+		            # xy=(i, j), color = cols[-1+len(aksharas[label])],
+		            xy=(i, j), color = cols[color_ind],
+		            xytext = (0, 0),
+		            textcoords = 'offset points', # ha = 'right', va = 'bottom',
+		            #bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
+		            #arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0')
+		        )
+	        else: # tSNE - use k-means to cluster
+		    	plt.annotate(
+		            # aksharas[label], size = min(25, 2 + 1.5 * aksharas_freq[label][1]/500),
+		            aksharas[label], size = 15,
+		            # xy=(i, j), color = cols[-1+len(aksharas[label])],
+		            xy=(i, j), color = cols[labels[label]],
+		            xytext = (0, 0),
+		            textcoords = 'offset points', # ha = 'right', va = 'bottom',
+		            #bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
+		            #arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0')
+		        )
 	    plt.show()

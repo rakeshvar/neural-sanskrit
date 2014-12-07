@@ -93,6 +93,11 @@ outfile = os.path.basename(sys.argv[1])[:-4] + '.pkl'
 with open(outfile, 'wb') as f:
     pickle.dump(corpus, f, 2)
 
+# write out all aksharas for access in neural net
+outfile2 = os.path.basename(sys.argv[1])[:-4] + '_ak.pkl'
+with open(outfile2,'wb') as f:
+    pickle.dump(aksharas, f, 2)
+
 hashfile = os.path.basename(sys.argv[1])[:-4] + '.list'
 with open(hashfile, 'w') as f:
     f.write('# The aksharas, their codes and counts stored as a list\n')
