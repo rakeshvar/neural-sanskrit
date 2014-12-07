@@ -98,5 +98,5 @@ with open(hashfile, 'w') as f:
     f.write('# The aksharas, their codes and counts stored as a list\n')
     f.write('[\n')
     for akshara, code in sorted(hashcodes.items(), key=lambda x:x[1]):
-        f.write("'{}', # {}, {}\n".format(akshara, code, counts[akshara]))
+        f.write("('{}', {}), \n".format(akshara, counts[akshara]))
     f.write(']')

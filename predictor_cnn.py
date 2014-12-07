@@ -41,9 +41,9 @@ parameters = {
 }
 parameters['init_learn_rate'] = .01 * parameters['batch_sz']
 if parameters['kernel'] is 'laplace':
-	parameters['init_kernel_sz'] = parameters['nDims'] ** .5
+    parameters['init_kernel_sz'] = parameters['nDims'] ** .5
 else:
-	parameters['init_kernel_sz'] = parameters['nDims']
+    parameters['init_kernel_sz'] = parameters['nDims']
 
 prm_file_name = 'default.prm'
 if (len(sys.argv) > 2) and (sys.argv[2].endswith('.prm')):
@@ -231,7 +231,7 @@ pkl_file_name = os.path.splitext(inpt_file_name)[0] + '_{:04.1f}_' +\
                 os.path.splitext(os.path.basename(prm_file_name))[0] + '.pkl'
 
 for epoch in range(P.nEpochs):
-	# Set current learning rate
+    # Set current learning rate
     cur_learn_rate.set_value(P.init_learn_rate / (1 + epoch // 5))
     
     # Train the data
@@ -278,9 +278,10 @@ for epoch in range(P.nEpochs):
         best_ts_prob = ts_prob
         best_pkl_file = pkl_file_name.format(100 * best_ts_prob)
         wts_lex = {'W1':borrow(W1), 'W2': borrow(W2), 
-        		   'b1':borrow(b1), 'b2': borrow(b2), 
-        		   'lexicon': borrow(lexicon), 
-        		   'params': P.__dict__, 'stats' : stats}
+                   'b1':borrow(b1), 'b2': borrow(b2),
+                   'kernel_sz':float(borrow(kernel_sz)),
+                   'lexicon': borrow(lexicon),
+                   'params': P.__dict__, 'stats' : stats}
         with open(best_pkl_file, "wb") as f:
             pickle.dump(wts_lex, f, -1)
 
