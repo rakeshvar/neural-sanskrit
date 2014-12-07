@@ -34,11 +34,6 @@ pcs = pca.fit_transform(lexicon)
 with open(corpus_name + '_pca.pkl', "wb") as f:
     pickle.dump(pcs, f, -1)
 
-####################### CLUSTERING ALGORITHM (K MEANS) ##########################
-
-# estimator = KMeans(n_clusters=CLUSTERS)
-# estimator.fit(pcs)
-# labels = estimator.labels_
 
 ####################### TSNE ##########################
 
