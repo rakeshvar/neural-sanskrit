@@ -5,7 +5,7 @@ A Neural Network that learns to predict Sanskrit text and learns a vector repres
 
 Use
 -----
-Build Corpus [corpus_builder.py]
+Build Corpus [corpus_builder.py] - NOTE: needs to be run in python3
 ```sh
 python corpus_builder.py <path_to_file.txt> # See Usage string for more options
 ```
@@ -38,5 +38,4 @@ python visual_output.py <int DIMENSIONS> <#occurences below which words not disp
 input: <int DIMENSIONS>. <int #occurences below which words not displayed>, <path_to_file_<test error>_pca.pkl>, <path_to_file_<test error>_tsne.pkl>, <path_to_file_ak.pkl>, <path_to_file.list> 
 output: 2 graphs - one for PCA then after exit another for tSNE
 
-NOTE: PCA results are colored based on the final character in the akshara, while tSNE is colored based on hierarchical clustering (agglomerative).
-
+NOTE: PCA results are colored based on the final character in the akshara, while tSNE is colored based on hierarchical clustering (agglomerative).Also, depending on your OS and support for Unicode characters you may or may not be able to view the Devanagri aksharas.
