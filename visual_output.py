@@ -13,8 +13,10 @@ from mpl_toolkits.mplot3d import proj3d
 from sklearn.cluster import KMeans
 from sklearn.cluster import AgglomerativeClustering
 
-if(len(sys.argv)<6):
-	print('Usage: python visual_output.py <DIMENSIONS> <COUNT_THRESHOLD> <pca pickle> <tsne pickle> <akshara pickle file> <.list file>')
+if(len(sys.argv)<7):
+	print('\nUsage: python {} <DIMENSIONS> <COUNT_THRESHOLD> <pca pickle> <tsne pickle> '
+		  '<akshara pickle file> <.list file>'.format(sys.argv[0]))
+	sys.exit()
 
 DIMENSIONS = int(sys.argv[1])
 COUNT_THRESHOLD = int(sys.argv[2])
