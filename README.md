@@ -5,8 +5,7 @@ A Neural Network that learns to predict Sanskrit text and learns a vector repres
 
 ## Usage
 
-1) Build numerical corpus from text corpus like rAmAyaNa.txt 
-	NOTE: needs to be run in python3
+1) Build numerical corpus from text corpus like rAmAyaNa.txt. (Needs __python3__)
 ```sh
 python3 corpus_builder.py [corpus.txt] 
 # See Usage string for more options
@@ -39,7 +38,8 @@ python dim_reduction.py [corpus_[error]_[default].pkl]
 5) Visualize PCA and tSNE in 2D 
 ```sh
 python visualize_lexicon.py [corpus_[error]_[default]_[pca/tsne].pkl] [corpus.list] 
+# See Usage string for more options
 ```
 
-	output: A bunch of plots that let you visualize the lexicon in 2/3 dimensions.
+	output: A bunch of plots that let you visualize the lexicon in 2 or 3 dimensions.
 
