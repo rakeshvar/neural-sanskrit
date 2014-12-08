@@ -47,10 +47,10 @@ for line in txtfile:
 #
 # Encode the above aksharas as integers
 #
-hashcodes = {}
+akaara_codes = {}
 i_code = 0
 for akshara, count in sorted(counts.items(), key=lambda x:x[0]):
-    hashcodes[akshara] = i_code
+    akaara_codes[akshara] = i_code
     log(i_code, akshara, count)
     i_code += 1
 
@@ -58,53 +58,46 @@ for akshara, count in sorted(counts.items(), key=lambda x:x[0]):
 # Now build the actual corpus as a sequence of integers
 #
 txtfile.seek(0)
-corpus = [hashcodes['$']]
+corpus = [akaara_codes['$']]
 for line in txtfile:
     for word in line.split():
         # Add each akshara from each word
         for aksh_match in akshara_pattern.finditer(word):
-            corpus.append(hashcodes[aksh_match.group()])
+            corpus.append(akaara_codes[aksh_match.group()])
             log('{{{}}}'.format(aksh_match.group()), end='')
 
         # Add a space if the previous character is not a space or newline
-        if not corpus[-1] in (hashcodes['$'], hashcodes['_']):
-            corpus.append(hashcodes['_'])
+        if not corpus[-1] in (akaara_codes['$'], akaara_codes['_']):
+            corpus.append(akaara_codes['_'])
             log('{_}')
 
     # Add newline if previous character was not newline
     # If previous character is a space replace it with newline
-    if corpus[-1] != hashcodes['$']:
-        if corpus[-1] == hashcodes['_']:
-            corpus[-1] = hashcodes['$']
+    if corpus[-1] != akaara_codes['$']:
+        if corpus[-1] == akaara_codes['_']:
+            corpus[-1] = akaara_codes['$']
             log('{<$}')
         else:
-            corpus.append(hashcodes['$'])
+            corpus.append(akaara_codes['$'])
             log('{$}')
 
 txtfile.close()
-log(hashcodes)
+log(akaara_codes)
 log(corpus)
 
 #
-# Now save the corpus and the hashcodes
+# Now save the corpus and the akaara_codes
 #
 import pickle, os
 outfile = os.path.basename(sys.argv[1])[:-4] + '.pkl'
 with open(outfile, 'wb') as f:
     pickle.dump(corpus, f, 2)
 
-# write out all aksharas for access in neural net
-aksharas = {}
-for key, val in hashcodes.items():
-	aksharas[val] = key
-outfile2 = os.path.basename(sys.argv[1])[:-4] + '_ak.pkl'
-with open(outfile2,'wb') as f:
-    pickle.dump(aksharas, f, 2)
-
 hashfile = os.path.basename(sys.argv[1])[:-4] + '.list'
 with open(hashfile, 'w') as f:
-    f.write('# The aksharas, their codes and counts stored as a list\n')
-    f.write('[\n')
-    for akshara, code in sorted(hashcodes.items(), key=lambda x:x[1]):
-        f.write("('{}', {}), \n".format(akshara, counts[akshara]))
+    f.write('# -*- coding: utf-8 -*-\n'
+            '# The aksharas, their codes and counts stored as a list\n'
+            '[\n')
+    for akshara, code in sorted(akaara_codes.items(), key=lambda x:x[1]):
+        f.write("(u'{}', {}), \n".format(akshara, counts[akshara]))
     f.write(']')

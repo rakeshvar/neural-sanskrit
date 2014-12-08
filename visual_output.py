@@ -1,151 +1,189 @@
 # -*- coding: utf-8 -*-
-# Usage
-# python visual_output.py <DIMENSIONS> <pca pickle> <tsne pickle> <akshara pickle file> <.list file>
+from __future__ import unicode_literals
 
 import sys
 import pickle
-import pylab
 import ast
+
 import numpy as np
+import pylab
+import matplotlib
 import matplotlib.pyplot as plt
+
 from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
+
 from sklearn.cluster import KMeans
 from sklearn.cluster import AgglomerativeClustering
 
-if(len(sys.argv)<7):
-	print('\nUsage: python {} <DIMENSIONS> <COUNT_THRESHOLD> <pca pickle> <tsne pickle> '
-		  '<akshara pickle file> <.list file>'.format(sys.argv[0]))
-	sys.exit()
+# ###################### PARSE PARAMS #########################
 
-DIMENSIONS = int(sys.argv[1])
-COUNT_THRESHOLD = int(sys.argv[2])
+if len(sys.argv) < 3:
+    print('\nUsage: python {} <pca pickle> <.list file> [threshold=0]'
+          ''.format(sys.argv[0]))
+    sys.exit()
 
-####################### READ IN DIM REDUCTION DATA FROM FILE #########################
+pca_file_name = sys.argv[1]
+list_file_name = sys.argv[2]
 
-# Read in PCA information
-with open(sys.argv[3],'rb') as f: 
-    pcs_pca = pickle.load(f)
+try:
+    threshold = int(sys.argv[3])
+except IndexError:
+    threshold = 0
 
-# Read in tSNE information
-with open(sys.argv[4],'rb') as f: 
-    pcs_tsne = pickle.load(f)
+# ###################### READ IN DIM REDUCTION DATA FROM FILE ##################
 
-# Read in the aksharas
-with open(sys.argv[5],'rb') as f: 
-    aksharas = pickle.load(f)
+print('Reading the representaion information..')
+with open(pca_file_name, 'rb') as pca_file:
+    components = pickle.load(pca_file)
 
-# Read in akshara frequencies
-with open(sys.argv[6],'rb') as f: 
-    aksharas_freq = ast.literal_eval(f.read())
+print('Reading the akshara counts list...')
+with open(list_file_name, 'rb') as list_file:
+    aksh_counts = ast.literal_eval(list_file.read())
 
-nWords=len(aksharas)
-x=[]
-y=[]
-z=[]
-if DIMENSIONS>=3:
-	# plot PCA 
-    x.append(pcs_pca[:,0])
-    y.append(pcs_pca[:,1])
-    z.append(pcs_pca[:,2])
+colours = [(0, 0, 0),
+           (.1, .1, 1),
+           (1, .1, .1),
+           (.1, 1, .1),
+           (1, .5, .5),
+           (1, .1, 1),
+           (.1, .5, 0),
+           (.5, 0, .1),
+           (.0, .1, .5),
+           (.51, .51, 0),
+           (.1, .5, .1),
+           (.5, .1, .1),
+           (.1, .1, .5),
+           (.5, .5, .1),
+           (.1, .5, .5), ]
 
-    # plot tSNE
-    x.append(pcs_tsne[:,0])
-    y.append(pcs_tsne[:,1])
-    z.append(pcs_tsne[:,2])
+if sys.platform.startswith('linux'):
+    matplotlib.rc('font', **{'sans-serif': 'gargi', 'family': 'sans-serif'})
 
-    for ind in [0,1]:
-	    np.random.seed(5)
-	    fig = plt.figure(1, figsize=(4, 3))
-	    plt.clf()
-	    ax = Axes3D(fig, rect=[0, 0, .95, 1], elev=48, azim=134)
-	    plt.cla()
+nAksharas = len(aksh_counts)
 
-	    ax.scatter(x[ind],y[ind], z[ind], c=labels.astype(np.float), s=100)
+# ###################### PLOT #########################################
 
-	    ax.w_xaxis.set_ticklabels([])
-	    ax.w_yaxis.set_ticklabels([])
-	    ax.w_zaxis.set_ticklabels([])
-	    ax.set_xlabel('1st PC')
-	    ax.set_ylabel('2nd PC')
-	    ax.set_zlabel('3rd PC')
 
-	    for i, txt in enumerate([aksharas[j] for j in range(0,len(aksharas),50)]):
-	        x2, y2, _ = proj3d.proj_transform(x[ind][i],y[ind][i],z[ind][i], ax.get_proj())    
-	        label = pylab.annotate(txt,
-	            xycoords='data', 
-	            xy = (x2, y2), xytext = (60, 20),
-	            textcoords = 'offset points', ha = 'right', va = 'bottom',
-	            bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
-	            arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0'))
-	    plt.show()
-else:
-    # plot PCA 
-    x.append(pcs_pca[:,0])
-    y.append(pcs_pca[:,1])
+def plot3(x, y, z, cols):
+    fig = plt.figure(1, figsize=(4, 3))
+    plt.clf()
 
-    # plot tSNE
-    x.append(pcs_tsne[:,0])
-    y.append(pcs_tsne[:,1])
+    ax = Axes3D(fig, rect=[0, 0, .95, 1], elev=48, azim=134)
+    plt.cla()
 
-    # # Calculate KMeans Clustering
-    # estimator = KMeans(n_clusters=15)
-    # estimator.fit(pcs_tsne)
-    # labels = estimator.labels_
+    ax.scatter(x, y, z, c=cols.astype(np.float), s=100)
+    ax.w_xaxis.set_ticklabels([])
+    ax.w_yaxis.set_ticklabels([])
+    ax.w_zaxis.set_ticklabels([])
+    ax.set_xlabel('1st Component')
+    ax.set_ylabel('2nd Component')
+    ax.set_zlabel('3rd Component')
 
-    # Calculate Agglomerative Clustering
-    estimator = AgglomerativeClustering(n_clusters=15)
-    estimator.fit(pcs_tsne)
-    labels = estimator.labels_
+    for i in range(0, nAksharas, nAksharas//100):
+        akshara, count = aksh_counts[i]
+        if count < threshold:
+            continue
+        x2, y2, _ = proj3d.proj_transform(x[i], y[i], z[i], ax.get_proj())
+        pylab.annotate(
+            akshara,
+            xycoords='data',
+            xy=(x2, y2),
+            xytext=(60, 20),
+            textcoords='offset points', ha='right', va='bottom',
+            bbox=dict(boxstyle='round,pad=0.5', fc='yellow', alpha=0.5),
+            arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+    plt.show()
 
-    for ind in [0,1]:
-	    plt.scatter(x[ind], y[ind], c=[1, 1, 1], s=0)#c=labels.astype(np.float), s=1000)
-	    cols = [
-	    (0, 0, 0),
-	    (.1, .1, 1),
-	    (1, .1, .1),
-	    (.1, 1, .1),
-	    (1, .5, .5),
-	    (1, .1, 1),
-	    (.1, .5, 0),
-	    (.5, 0, .1),
-	    (.0, .1, .5),
-	    (.51, .51, 0),
-	    (.1, .5, .1),  
-	    (.5, .1, .1),
-	    (.1, .1, .5), 
-	    (.5, .5, .1), 
-	    (.1, .5, .5),   
-	    ]
-	    for label, i, j in zip(range(nWords), x[ind], y[ind]):
-	        if aksharas_freq[label][1]<COUNT_THRESHOLD:
-	            continue
-	        if ind==0: # PCA
-		        unicode_endings = [u'ा', u'ि', u'ी', u'ु', u'ू', u'ृ', u'े', u'ै', u'ो', u'ौ', u'ं', u'ः', u'्']
-		        if (aksharas[label][-1]) in unicode_endings:
-		        	color_ind = unicode_endings.index(aksharas[label][-1])
-		        elif aksharas[label] in u'अआइईउऊऋएऐओऔ':
-		        	color_ind = 13
-		        else: 
-		        	color_ind = 14
-		        plt.annotate(
-		            aksharas[label], size = min(25, 2 + 1.5 * aksharas_freq[label][1]/500),
-		            # xy=(i, j), color = cols[-1+len(aksharas[label])],
-		            xy=(i, j), color = cols[color_ind],
-		            xytext = (0, 0),
-		            textcoords = 'offset points', # ha = 'right', va = 'bottom',
-		            #bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
-		            #arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0')
-		        )
-	        else: # tSNE - use k-means to cluster
-		    	plt.annotate(
-		            # aksharas[label], size = min(25, 2 + 1.5 * aksharas_freq[label][1]/500),
-		            aksharas[label], size = 15,
-		            # xy=(i, j), color = cols[-1+len(aksharas[label])],
-		            xy=(i, j), color = cols[labels[label]],
-		            xytext = (0, 0),
-		            textcoords = 'offset points', # ha = 'right', va = 'bottom',
-		            #bbox = dict(boxstyle = 'round,pad=0.5', fc = 'yellow', alpha = 0.5),
-		            #arrowprops = dict(arrowstyle = '->', connectionstyle = 'arc3,rad=0')
-		        )
-	    plt.show()
+
+def plot2(x, y, col_fn, size_fn):
+    plt.scatter(x, y, s=0)  # Dummy call plots blanks
+
+    for i in range(nAksharas):
+        akshara, count = aksh_counts[i]
+        if count < threshold:
+            continue
+
+        plt.annotate(
+            akshara,
+            size=size_fn(i),
+            color=col_fn(i),
+            xy=(x[i], y[i]),
+            xytext=(0, 0),
+            textcoords='offset points',
+        )
+
+    plt.show()
+
+
+def vowel_colour(akshara_idx):
+    akshara = aksh_counts[akshara_idx][0]
+    vowel_endings = [u'ा', u'ि', u'ी', u'ु', u'ू', u'ृ', u'े', u'ै', u'ो', u'ौ',
+                     u'ं', u'ः', u'्']
+
+    if (akshara[-1]) in vowel_endings:
+        idx = vowel_endings.index(akshara[-1])
+    elif akshara in u'अआइईउऊऋएऐओऔ':
+        idx = len(vowel_endings)
+    else:
+        idx = len(vowel_endings) + 1
+
+    return colours[idx]
+
+
+def predef_colour(classes):
+    def _predef_colour(akshara_idx):
+        return colours[classes[akshara_idx]]
+
+    return _predef_colour
+
+
+def count_size(akshara_idx):
+    count = aksh_counts[akshara_idx][1]
+    newlines = aksh_counts[0][1]
+    return min(25, 2 + 23 * (float(count) / newlines) ** .2)
+
+
+def fixed_size(size):
+    def _fixed_size(askhara_idx):
+        return size
+
+    return _fixed_size
+
+##################################### Main Code ###############################
+print('Plotting 2D with vowel colour & count size')
+plot2(components[:, 0], components[:, 1], vowel_colour, count_size)
+print('Plotting 2D with vowel colour & fixed size')
+plot2(components[:, 0], components[:, 1], vowel_colour, fixed_size(15))
+
+## Calculate KMeans Clustering
+print('Finding K-Means...')
+estimator = KMeans(n_clusters=15)
+estimator.fit(components)
+kmeans_labels = estimator.labels_
+
+print('Plotting 2D with kmeans colour & count size')
+plot2(components[:, 0], components[:, 1], predef_colour(kmeans_labels),
+      count_size)
+print('Plotting 2D with kmeans colour & fixed size')
+plot2(components[:, 0], components[:, 1], predef_colour(kmeans_labels),
+      fixed_size(15))
+
+## Calculate Agglomerative Clustering
+print('Finding Agglomorative Clusters...')
+estimator = AgglomerativeClustering(n_clusters=15)
+estimator.fit(components)
+agglo_labels = estimator.labels_
+
+print('Plotting 2D with agglomorative colour & count size')
+plot2(components[:, 0], components[:, 1], predef_colour(agglo_labels),
+      count_size)
+print('Plotting 2D with agglomorative colour & fixed size')
+plot2(components[:, 0], components[:, 1], predef_colour(agglo_labels),
+      fixed_size(15))
+
+# 3D plot
+print('Plotting 3D with kmeans colours')
+plot3(components[:, 0], components[:, 1], components[:, 2], kmeans_labels)
+print('Plotting 3D with agglomorative colours')
+plot3(components[:, 0], components[:, 1], components[:, 2], agglo_labels)
