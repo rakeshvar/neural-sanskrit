@@ -19,7 +19,7 @@ from sklearn.cluster import AgglomerativeClustering
 # ###################### PARSE PARAMS #########################
 
 if len(sys.argv) < 3:
-    print('\nUsage: python {} <pca pickle> <.list file> [threshold=0]'
+    print('\nUsage: python {} <components.pkl> <corpus.list file> [threshold=0]'
           ''.format(sys.argv[0]))
     sys.exit()
 
