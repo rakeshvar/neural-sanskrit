@@ -5,37 +5,40 @@ A Neural Network that learns to predict Sanskrit text and learns a vector repres
 
 Use
 -----
-Build Corpus [corpus_builder.py] - NOTE: needs to be run in python3
+Build numerical corpus from text corpus like rAmAyaNa.txt 
+	NOTE: needs to be run in python3
 ```sh
-python3 corpus_builder.py <path_to_file.txt> # See Usage string for more options
+python3 corpus_builder.py [corpus.txt] # See Usage string for more options
 ```
-input: <path_to_file.txt>
-output: <path_to_file.pkl>, <path_to_file.list>
+input: [corpus.txt]
+output: [corpus.pkl], [corpus.list]
 
 Run n-gram model to assess training and test prob (Use python2)
 ```sh
-python predictor_ngram.py <path_to_file.pkl> # See Usage string for more options
+python predictor_ngram.py [corpus.pkl] # See Usage string for more options
 ```
 
 Run Neural Net to learn word representations 
 (Needs you to install Theano. Available via github)
+
 ```sh
-python predictor_cnn.py <path_to_file.pkl> # See Usage string for more options
+python predictor_cnn.py [corpus.pkl] # See Usage string for more options
 ```
-input: <path_to_file.pkl>
-output: <path_to_file_<test error>_<param_flag>.pkl>, 
+
+input: [corpus.pkl]
+output: [corpus_[error]_[default].pkl], 
 
 Run Dimensional Reduction on output file
 ```sh
-python dim_reduction.py <path_to_file_<test error>_<param_flag>.pkl> 
+python dim_reduction.py [corpus_[error]_[default].pkl] 
 ```
-input: <path_to_file_<test error>_<param_flag>.pkl>
-output: <path_to_file_<test error>_<param_flag>_pca.pkl>, <path_to_file_<test error>_<param_flag>_tsne.pkl>
+input: [corpus_[error]_[default].pkl]
+output: [corpus_[error]_[default]_pca.pkl], [corpus_[error]_[default]_tsne.pkl]
 
 Visualize PCA and tSNE in 2D 
 ```sh
-python visualize_lexicon.py <path_to_file_<test error>_<param_flag>_<pca/tsne>.pkl> <path_to_file.list> 
+python visualize_lexicon.py [corpus_[error]_[default]_[pca/tsne].pkl] [corpus.list] 
 ```
-input: <path_to_file_<test error>_<param_flag>_pca.pkl> or <path_to_file_<test error>_<param_flag>_tsne.pkl> 
-	and <path_to_file.list> 
+input: [corpus_[error]_[default]_pca.pkl] or [corpus_[error]_[default]_tsne.pkl] 
+	and [corpus.list] 
 output: A bunch of plots that let you visualize the lexicon in 2/3 dimensions.
