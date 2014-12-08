@@ -43,3 +43,5 @@ python visualize_lexicon.py <corpus_<error>_<default>_<pca/tsne>.pkl> <corpus.li
 
 	output: A bunch of plots that let you visualize the lexicon in 2 or 3 dimensions.
 
+## Sample Visualization
+![](https://raw.github.com/rakeshvar/neural-sanskrit/sample_pca_vowel.png)
